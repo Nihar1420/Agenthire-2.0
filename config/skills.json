@@ -1,0 +1,66 @@
+{
+  "title": "Full-Stack Engineer (Node.js / React / AI Automation)",
+  "hourlyRate": {
+    "min": 35,
+    "max": 75,
+    "currency": "USD"
+  },
+  "availability": {
+    "hoursPerWeek": 40,
+    "timezone": "Asia/Kolkata",
+    "startingWithin": "immediately"
+  },
+  "targetPlatforms": ["upwork", "wellfound", "remotive", "remoteok", "wwr", "hackernews"],
+  "preferredStacks": [
+    "Node.js",
+    "React",
+    "Next.js",
+    "TypeScript",
+    "JavaScript",
+    "PostgreSQL",
+    "SQLite",
+    "Python",
+    "AI / LLM integration",
+    "automation",
+    "web scraping"
+  ],
+  "keywordFilters": {
+    "include": [
+      "node",
+      "nodejs",
+      "react",
+      "next.js",
+      "nextjs",
+      "javascript",
+      "typescript",
+      "full stack",
+      "fullstack",
+      "backend",
+      "frontend",
+      "automation",
+      "scraping",
+      "api",
+      "ai",
+      "llm",
+      "gpt",
+      "openai",
+      "python"
+    ],
+    "exclude": [
+      "senior only",
+      "on-site only",
+      "onsite only",
+      "no remote",
+      "clearance",
+      "us citizen only",
+      "unpaid",
+      "equity only",
+      "wordpress theme",
+      "php only",
+      ".net",
+      "salesforce",
+      "sap",
+      "junior intern"
+    ]
+  }
+}
