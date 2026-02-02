@@ -1,0 +1,28 @@
+{
+  "name": "agenthire",
+  "version": "1.0.0",
+  "description": "Autonomous 24/7 job & freelance outreach agent",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "once": "node src/core/run-once.js",
+    "orchestrator": "node src/core/orchestrator.js",
+    "migrate": "node -e \"import('./src/db/schema.js').then(m=>m.migrate())\"",
+    "setup": "node scripts/setup.js",
+    "setup:verify": "node scripts/setup.js --verify-only",
+    "limits": "node limits-check.cjs",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop ecosystem.config.cjs",
+    "pm2:restart": "pm2 restart ecosystem.config.cjs && pm2 save",
+    "pm2:logs": "pm2 logs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "winston": "^3.14.2",
+    "winston-daily-rotate-file": "^5.0.0"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

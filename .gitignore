@@ -1,0 +1,28 @@
+# ─── Secrets & environment ───────────────────────────────
+.env
+.env.*
+!.env.example
+config/proxies.json
+config/firebase-service-account.json
+
+# ─── Runtime data & logs ─────────────────────────────────
+data/
+logs/
+browser-data/
+
+# ─── Dependencies & build output ─────────────────────────
+node_modules/
+ui/.next/
+ui/node_modules/
+
+# ─── OS / editor cruft ───────────────────────────────────
+.DS_Store
+*.log
+npm-debug.log*
+
+# ─── Githancer timeline (never committed) ────────────────
+.timeline.json
+.timeline-cache.json
+
+# ─── Rebuild roadmap (planning doc, not a deliverable) ────
+REBUILD-FROM-SCRATCH.md
