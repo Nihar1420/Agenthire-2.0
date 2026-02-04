@@ -1,0 +1,37 @@
+{
+  "signature": "Best,\nPranay",
+  "bannedWords": [
+    "synergy",
+    "rockstar",
+    "ninja",
+    "guru",
+    "cutting-edge",
+    "world-class",
+    "leverage",
+    "circle back",
+    "touch base",
+    "revolutionary",
+    "game-changer",
+    "passionate about"
+  ],
+  "proposal": {
+    "wordCount": { "min": 150, "max": 200 },
+    "styleGuide": "First person. Open with one concrete sentence showing you understood the specific job. Name 1–2 directly relevant things you have built. State how you would approach THIS task in 2–3 sentences. Close with a single clear next step. No flattery, no filler, no buzzwords. Never invent experience not in the résumé.",
+    "structure": ["hook (understood the ask)", "relevant proof", "approach", "single CTA"]
+  },
+  "coldEmail": {
+    "sentenceCount": { "min": 5, "max": 7 },
+    "styleGuide": "Company-specific opener referencing something real about them. One clear reason you are reaching out. One sentence of relevant proof. A single, low-friction CTA (a short call or a reply). Plain text, no links unless essential. Never fabricate familiarity with the company.",
+    "structure": ["company-specific opener", "why you", "proof", "single CTA"]
+  },
+  "followUp": {
+    "day3": {
+      "styleGuide": "2–4 sentences. Friendly, brief nudge on the previous email. Add one new small piece of value or a reason to reply now. No guilt-tripping.",
+      "maxSentences": 4
+    },
+    "day7": {
+      "styleGuide": "2–3 sentences. Final polite check-in. Make it easy to say no. Offer to close the loop if the timing is wrong.",
+      "maxSentences": 3
+    }
+  }
+}
