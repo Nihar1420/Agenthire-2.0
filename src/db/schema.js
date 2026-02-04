@@ -97,6 +97,31 @@ export function migrate() {
       content     TEXT NOT NULL,
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS cycle_logs (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      started_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      finished_at     TEXT,
+      status          TEXT NOT NULL DEFAULT 'running',
+      jobs_found      INTEGER NOT NULL DEFAULT 0,
+      leads_found     INTEGER NOT NULL DEFAULT 0,
+      jobs_scored     INTEGER NOT NULL DEFAULT 0,
+      emails_found    INTEGER NOT NULL DEFAULT 0,
+      proposals_sent  INTEGER NOT NULL DEFAULT 0,
+      errors          TEXT
+    );
+
+    -- Indexes for the hot query paths (scoring, applying, dedup, analytics).
+    CREATE INDEX IF NOT EXISTS idx_jobs_status    ON jobs(status);
+    CREATE INDEX IF NOT EXISTS idx_jobs_platform  ON jobs(platform);
+    CREATE INDEX IF NOT EXISTS idx_jobs_score     ON jobs(score);
+    CREATE INDEX IF NOT EXISTS idx_leads_status   ON leads(status);
+    CREATE INDEX IF NOT EXISTS idx_leads_source   ON leads(source);
+    CREATE INDEX IF NOT EXISTS idx_leads_email    ON leads(email_status);
+    CREATE INDEX IF NOT EXISTS idx_apps_status    ON applications(status);
+    CREATE INDEX IF NOT EXISTS idx_apps_type      ON applications(type);
+    CREATE INDEX IF NOT EXISTS idx_apps_sent_at   ON applications(sent_at);
+    CREATE INDEX IF NOT EXISTS idx_patterns_domain ON email_patterns(domain);
   `);
 
   return d;
