@@ -1,12 +1,18 @@
 // src/intelligence/llm.js — LLM access layer.
-// Primary provider: Google Gemini (gemini-2.5-flash). Every call returns a uniform
-// { text } shape so callers never touch a provider SDK directly.
+// Primary: Google Gemini (gemini-2.5-flash). On ANY Gemini failure, fall back to
+// Groq (llama-3.3-70b-versatile). Every call returns a uniform { text } shape.
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import Groq from 'groq-sdk';
 import config from '../core/config.js';
 import logger from '../utils/logger.js';
 
 const GEMINI_MODEL = 'gemini-2.5-flash';
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
+
+if (!config.groqApiKey) {
+  logger.warn('GROQ_API_KEY is not set — no LLM fallback if Gemini fails.');
+}
 
 let _gemini = null;
 function gemini() {
@@ -16,13 +22,15 @@ function gemini() {
   return _gemini;
 }
 
-/**
- * Complete a prompt.
- * @param {string} prompt
- * @param {{ temperature?: number, maxOutputTokens?: number }} [opts]
- * @returns {Promise<{ text: string }>}
- */
-export async function complete(prompt, opts = {}) {
+let _groq = null;
+function groq() {
+  if (_groq) return _groq;
+  if (!config.groqApiKey) throw new Error('GROQ_API_KEY is not set');
+  _groq = new Groq({ apiKey: config.groqApiKey });
+  return _groq;
+}
+
+async function completeGemini(prompt, opts) {
   const model = gemini().getGenerativeModel({
     model: GEMINI_MODEL,
     generationConfig: {
@@ -30,11 +38,36 @@ export async function complete(prompt, opts = {}) {
       maxOutputTokens: opts.maxOutputTokens ?? 2048,
     },
   });
-
   const result = await model.generateContent(prompt);
-  const text = result?.response?.text?.() ?? '';
-  logger.debug('llm.complete via gemini', { chars: text.length });
-  return { text };
+  return result?.response?.text?.() ?? '';
+}
+
+async function completeGroq(prompt, opts) {
+  const res = await groq().chat.completions.create({
+    model: GROQ_MODEL,
+    temperature: opts.temperature ?? 0.7,
+    max_tokens: opts.maxOutputTokens ?? 2048,
+    messages: [{ role: 'user', content: prompt }],
+  });
+  return res?.choices?.[0]?.message?.content ?? '';
+}
+
+/**
+ * Complete a prompt. Tries Gemini first, then Groq on any failure.
+ * @returns {Promise<{ text: string, provider: string }>}
+ */
+export async function complete(prompt, opts = {}) {
+  try {
+    const text = await completeGemini(prompt, opts);
+    logger.debug('llm.complete via gemini', { chars: text.length });
+    return { text, provider: 'gemini' };
+  } catch (geminiErr) {
+    logger.warn('Gemini failed, falling back to Groq', { error: geminiErr.message });
+    if (!config.groqApiKey) throw geminiErr;
+    const text = await completeGroq(prompt, opts);
+    logger.debug('llm.complete via groq', { chars: text.length });
+    return { text, provider: 'groq' };
+  }
 }
 
 export default { complete };
