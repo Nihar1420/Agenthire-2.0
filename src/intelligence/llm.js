@@ -14,6 +14,44 @@ if (!config.groqApiKey) {
   logger.warn('GROQ_API_KEY is not set — no LLM fallback if Gemini fails.');
 }
 
+/**
+ * Preventive per-minute request throttle. Serializes acquire() calls through a promise
+ * chain so concurrent callers queue in order, and delays the next request until fewer
+ * than `rpm` timestamps fall inside the trailing 60s window.
+ */
+export class SlidingWindowLimiter {
+  constructor(rpm = 12) {
+    this.rpm = rpm;
+    this.windowMs = 60_000;
+    this.timestamps = [];
+    this._chain = Promise.resolve();
+  }
+
+  acquire() {
+    // Chain so only one waiter is evaluated at a time (FIFO fairness).
+    this._chain = this._chain.then(() => this._acquireOne());
+    return this._chain;
+  }
+
+  async _acquireOne() {
+    // Drop timestamps outside the window.
+    const now = Date.now();
+    this.timestamps = this.timestamps.filter((t) => now - t < this.windowMs);
+
+    if (this.timestamps.length >= this.rpm) {
+      const oldest = this.timestamps[0];
+      const wait = this.windowMs - (now - oldest) + 5;
+      await new Promise((r) => setTimeout(r, wait));
+      return this._acquireOne();
+    }
+    this.timestamps.push(Date.now());
+  }
+}
+
+const limiter = new SlidingWindowLimiter(
+  parseInt(process.env.LLM_RPM || '12', 10)
+);
+
 let _gemini = null;
 function gemini() {
   if (_gemini) return _gemini;
@@ -57,6 +95,7 @@ async function completeGroq(prompt, opts) {
  * @returns {Promise<{ text: string, provider: string }>}
  */
 export async function complete(prompt, opts = {}) {
+  await limiter.acquire();
   try {
     const text = await completeGemini(prompt, opts);
     logger.debug('llm.complete via gemini', { chars: text.length });
