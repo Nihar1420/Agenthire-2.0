@@ -52,6 +52,59 @@ const limiter = new SlidingWindowLimiter(
   parseInt(process.env.LLM_RPM || '12', 10)
 );
 
+/**
+ * Approximate daily token accounting with midnight (local) rollover. Limits are
+ * env-overridable; we log a single warning per day once usage crosses 80%.
+ */
+export class TokenCounter {
+  constructor(dailyLimit) {
+    this.dailyLimit = dailyLimit;
+    this.day = TokenCounter._today();
+    this.used = 0;
+    this._warned = false;
+  }
+
+  static _today() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  _rolloverIfNeeded() {
+    const today = TokenCounter._today();
+    if (today !== this.day) {
+      this.day = today;
+      this.used = 0;
+      this._warned = false;
+    }
+  }
+
+  /** Rough token estimate: ~4 characters per token. */
+  static estimate(text) {
+    return Math.ceil((text || '').length / 4);
+  }
+
+  add(tokens) {
+    this._rolloverIfNeeded();
+    this.used += tokens;
+    if (!this._warned && this.used >= this.dailyLimit * 0.8) {
+      this._warned = true;
+      logger.warn('LLM daily token usage above 80%', {
+        used: this.used,
+        limit: this.dailyLimit,
+      });
+    }
+    return this.used;
+  }
+
+  remaining() {
+    this._rolloverIfNeeded();
+    return Math.max(0, this.dailyLimit - this.used);
+  }
+}
+
+const tokenCounter = new TokenCounter(
+  parseInt(process.env.LLM_DAILY_TOKEN_LIMIT || '1000000', 10)
+);
+
 let _gemini = null;
 function gemini() {
   if (_gemini) return _gemini;
@@ -96,17 +149,25 @@ async function completeGroq(prompt, opts) {
  */
 export async function complete(prompt, opts = {}) {
   await limiter.acquire();
+  const promptTokens = TokenCounter.estimate(prompt);
   try {
     const text = await completeGemini(prompt, opts);
+    tokenCounter.add(promptTokens + TokenCounter.estimate(text));
     logger.debug('llm.complete via gemini', { chars: text.length });
     return { text, provider: 'gemini' };
   } catch (geminiErr) {
     logger.warn('Gemini failed, falling back to Groq', { error: geminiErr.message });
     if (!config.groqApiKey) throw geminiErr;
     const text = await completeGroq(prompt, opts);
+    tokenCounter.add(promptTokens + TokenCounter.estimate(text));
     logger.debug('llm.complete via groq', { chars: text.length });
     return { text, provider: 'groq' };
   }
+}
+
+/** Current daily token usage snapshot. */
+export function tokenUsage() {
+  return { used: tokenCounter.used, remaining: tokenCounter.remaining(), limit: tokenCounter.dailyLimit };
 }
 
 export default { complete };
