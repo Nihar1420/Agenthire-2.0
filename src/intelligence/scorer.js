@@ -73,4 +73,37 @@ export async function scoreJob(job) {
   return score;
 }
 
-export default { scoreJob, stripCodeFences };
+/**
+ * Score up to `limit` unscored jobs. A per-run cache keyed by title+company avoids
+ * re-billing the LLM for duplicate listings that appear across multiple feeds.
+ * @returns {Promise<{ scored: number }>}
+ */
+export async function scoreUnscoredJobs(limit = 50) {
+  const jobs = getUnscoredJobs(limit);
+  const cache = new Map();
+  let scored = 0;
+
+  for (const job of jobs) {
+    const key = `${(job.title || '').toLowerCase()}::${(job.company || '').toLowerCase()}`;
+    try {
+      if (cache.has(key)) {
+        // Reuse the score we already paid for this cycle.
+        updateJobScore(job.id, cache.get(key));
+        scored += 1;
+        continue;
+      }
+      const score = await scoreJob(job);
+      if (score !== null) {
+        cache.set(key, score);
+        scored += 1;
+      }
+    } catch (err) {
+      logger.error('scoreUnscoredJobs: job failed', { jobId: job.id, error: err.message });
+    }
+  }
+
+  logger.info('scoreUnscoredJobs complete', { scored, considered: jobs.length });
+  return { scored };
+}
+
+export default { scoreJob, scoreUnscoredJobs, stripCodeFences };
