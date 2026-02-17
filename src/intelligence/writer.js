@@ -86,4 +86,49 @@ JSON:`;
   };
 }
 
-export default { writeProposal };
+/**
+ * Write a cold outreach email for a lead. 5–7 sentences, company-specific opener,
+ * single CTA. Returns { subject, body }; safe fallback on failure.
+ */
+export async function writeColdEmail(lead) {
+  const resume = (config.resume || '').slice(0, RESUME_CAP);
+  const style = config.templates?.coldEmail?.styleGuide || '';
+  const { min = 5, max = 7 } = config.templates?.coldEmail?.sentenceCount || {};
+  const company = lead.company || 'your team';
+  const name = lead.name ? lead.name.split(' ')[0] : 'there';
+
+  const prompt = `Write a cold outreach email (${min}-${max} sentences).
+Return STRICT JSON: {"subject": "...", "body": "..."}.
+Open with something specific to ${company}. One clear, low-friction CTA.
+Style: ${style}
+${RULES()}
+
+Recipient: ${name}${lead.title ? `, ${lead.title}` : ''} at ${company}
+${lead.notes ? `Context: ${String(lead.notes).slice(0, 400)}` : ''}
+
+=== SENDER RÉSUMÉ ===
+${resume}
+
+JSON:`;
+
+  try {
+    const { text } = await complete(prompt, { temperature: 0.6, maxOutputTokens: 500 });
+    const copy = parseCopy(text);
+    if (copy && copy.body) {
+      return { subject: copy.subject || `Quick idea for ${company}`, body: withSignature(copy.body) };
+    }
+  } catch (err) {
+    logger.warn('writeColdEmail failed, using fallback', { leadId: lead.id, error: err.message });
+  }
+
+  return {
+    subject: `Quick idea for ${company}`,
+    body: withSignature(
+      `Hi ${name},\n\nI came across ${company} and wanted to reach out. ` +
+        `I build Node.js/React web apps and automation, and I think I could help you ship faster. ` +
+        `Would you be open to a short call this week?`
+    ),
+  };
+}
+
+export default { writeProposal, writeColdEmail };
