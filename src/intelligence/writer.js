@@ -6,6 +6,19 @@ import config from '../core/config.js';
 import logger from '../utils/logger.js';
 import { complete } from './llm.js';
 import { stripCodeFences } from './scorer.js';
+import { getRecentLearnings } from '../db/queries.js';
+
+/** Recent self-analysis learnings, injected into every writer prompt. */
+function learningsBlock() {
+  try {
+    const rows = getRecentLearnings(5);
+    if (!rows.length) return '';
+    const lines = rows.map((r) => `- ${r.content}`).join('\n');
+    return `\nApply these learnings from past performance:\n${lines}\n`;
+  } catch {
+    return '';
+  }
+}
 
 const RESUME_CAP = 2500;
 const DESC_CAP = 1500;
@@ -20,7 +33,8 @@ const RULES = () => `Rules:
 - ${bannedWordsRule()}
 - No flattery, no hype, no exclamation marks.
 - Never claim experience or skills not present in the résumé.
-- One clear call to action.`;
+- One clear call to action.
+${learningsBlock()}`;
 
 /** Parse { subject, body } from model output, tolerating code fences. */
 function parseCopy(text) {
@@ -131,4 +145,45 @@ JSON:`;
   };
 }
 
-export default { writeProposal, writeColdEmail };
+/**
+ * Write a follow-up nudge for an application. touch 1 = day-3, touch 2 = day-7.
+ * Short and polite; references the earlier email without repeating it.
+ * @param {object} app  application row (has company, subject)
+ * @param {1|2} touch
+ * @returns {Promise<{ subject: string, body: string }>}
+ */
+export async function writeFollowUp(app, touch) {
+  const tmpl = touch === 2 ? config.templates?.followUp?.day7 : config.templates?.followUp?.day3;
+  const style = tmpl?.styleGuide || '';
+  const maxSentences = tmpl?.maxSentences || (touch === 2 ? 3 : 4);
+  const company = app.company || 'your team';
+  const origSubject = app.subject || 'my earlier note';
+
+  const prompt = `Write a follow-up email (max ${maxSentences} sentences) — this is touch ${touch}${
+    touch === 2 ? ' (final, day 7)' : ' (day 3)'
+  }.
+Return STRICT JSON: {"subject": "...", "body": "..."}.
+It follows up on the earlier email titled "${origSubject}" to ${company}.
+Style: ${style}
+${RULES()}
+
+JSON:`;
+
+  try {
+    const { text } = await complete(prompt, { temperature: 0.6, maxOutputTokens: 300 });
+    const copy = parseCopy(text);
+    if (copy && copy.body) {
+      return { subject: copy.subject || `Re: ${origSubject}`, body: withSignature(copy.body) };
+    }
+  } catch (err) {
+    logger.warn('writeFollowUp failed, using fallback', { appId: app.id, touch, error: err.message });
+  }
+
+  const nudge =
+    touch === 2
+      ? `Hi,\n\nJust closing the loop on my note about ${company}. If the timing isn't right, no problem — happy to reconnect later.`
+      : `Hi,\n\nCircling back on my earlier email about ${company}. Would a short call this week work?`;
+  return { subject: `Re: ${origSubject}`, body: withSignature(nudge) };
+}
+
+export default { writeProposal, writeColdEmail, writeFollowUp };
