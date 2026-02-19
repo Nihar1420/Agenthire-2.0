@@ -82,6 +82,22 @@ export function getScoredJobsForPlatform(platform, minScore) {
   `).all(platform, minScore);
 }
 
+/** Backfill / update the apply_email for a job (used by feeds that parse addresses late). */
+export function setJobApplyEmail(id, email) {
+  return stmt(`UPDATE jobs SET apply_email = ? WHERE id = ?`).run(email, id);
+}
+
+/** Scored jobs that carry a direct apply email, at/above a score threshold, best first. */
+export function getJobsWithApplyEmail(minScore, limit = 50) {
+  return stmt(`
+    SELECT * FROM jobs
+    WHERE apply_email IS NOT NULL AND apply_email != ''
+      AND status = 'scored' AND score >= ?
+    ORDER BY score DESC
+    LIMIT ?
+  `).all(minScore, limit);
+}
+
 // ─────────────────────────────────────────────────────────
 // LEADS
 // ─────────────────────────────────────────────────────────
