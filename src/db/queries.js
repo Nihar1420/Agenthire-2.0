@@ -214,6 +214,15 @@ export function findApplicationBySenderEmail(email) {
   `).get(email);
 }
 
+/** Count applications of a given type sent today (local date), for daily-cap checks. */
+export function getTodayApplicationCountByType(type) {
+  const row = stmt(`
+    SELECT COUNT(*) AS n FROM applications
+    WHERE type = ? AND date(sent_at) = date('now', 'localtime')
+  `).get(type);
+  return row ? row.n : 0;
+}
+
 export function getActiveApplicationsForSequence() {
   return stmt(`
     SELECT * FROM applications
