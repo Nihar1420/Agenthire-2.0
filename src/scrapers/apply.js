@@ -19,6 +19,30 @@ function getEligibleJobs() {
   return getScoredJobsForPlatform('upwork', config.prospeoMinScore); // ≥75
 }
 
+/**
+ * Detect a captcha challenge or a redirect to login. Returns a reason string when the
+ * page is blocked, or null when it looks like a normal job page.
+ */
+async function detectBlock(page) {
+  const url = page.url();
+  if (/\/(login|signin)/i.test(url) || /login\.upwork\.com/i.test(url)) return 'login-redirect';
+
+  const blocked = await page
+    .evaluate(() => {
+      const html = document.body ? document.body.innerText.toLowerCase() : '';
+      if (document.querySelector('iframe[src*="captcha"], iframe[src*="recaptcha"], iframe[src*="hcaptcha"]')) {
+        return 'captcha-iframe';
+      }
+      if (/are you a human|verify you are|unusual traffic|complete the captcha/.test(html)) {
+        return 'captcha-text';
+      }
+      return null;
+    })
+    .catch(() => null);
+
+  return blocked;
+}
+
 /** Launch a persistent, stealthed browser context and inject the Upwork session cookie. */
 async function launchContext() {
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
@@ -71,7 +95,14 @@ export async function applyToJobs() {
 
       await page.goto(job.url.replace('#upwork', ''), { waitUntil: 'domcontentloaded' });
       logger.debug('applyToJobs: navigated', { jobId: job.id, title: job.title });
-      // Guards + submission follow in later commits.
+
+      // Never crash on a block — log and abort the whole cycle gracefully.
+      const block = await detectBlock(page);
+      if (block) {
+        logger.warn('applyToJobs: blocked, aborting cycle', { reason: block, jobId: job.id });
+        break;
+      }
+      // Submission follows in the next commit.
     }
   } catch (err) {
     logger.error('applyToJobs failed', { error: err.message });
