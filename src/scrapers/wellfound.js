@@ -8,6 +8,7 @@ import { chromium } from 'playwright-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import config from '../core/config.js';
 import logger from '../utils/logger.js';
+import { insertLead } from '../db/queries.js';
 
 const PROFILE_DIR = join(process.cwd(), 'browser-data', 'wellfound');
 const START_URL = 'https://wellfound.com/jobs';
@@ -76,8 +77,62 @@ export async function scrapeWellfound() {
     }
     const count = await page.locator(cardSelector).count();
     logger.info('scrapeWellfound: located company cards', { cardSelector, count });
-    // Extraction + insert added in the next commit.
-    return { inserted: 0, cardSelector, count };
+
+    // One page-side pass extracts everything we can from each card.
+    const leads = await page.$$eval(cardSelector, (cards) =>
+      cards.map((card) => {
+        const text = (sel) => card.querySelector(sel)?.textContent?.trim() || null;
+        const attr = (sel, a) => card.querySelector(sel)?.getAttribute(a) || null;
+        const companyLink = attr('a[href*="/company/"]', 'href') || attr('a[href*="/startups/"]', 'href');
+        const slug = companyLink ? companyLink.split('/').filter(Boolean).pop() : null;
+        const linkedin = attr('a[href*="linkedin.com"]', 'href');
+        const founderText = card.innerText || '';
+        const stageMatch = founderText.match(/(Seed|Series [A-E]|Pre-Seed|Public|Acquired)/i);
+        const empMatch = founderText.match(/(\d[\d,]*(?:\s*-\s*\d[\d,]*)?)\s+employees/i);
+        return {
+          company: text('[data-test="startup-name"]') || text('h2') || text('a[href*="/company/"]'),
+          slug,
+          company_url: companyLink ? `https://wellfound.com${companyLink}` : null,
+          name: text('[data-test="founder-name"]'),
+          title: text('[data-test="founder-title"]'),
+          linkedin_url: linkedin,
+          funding_stage: stageMatch ? stageMatch[1] : null,
+          employee_count: empMatch ? empMatch[1] : null,
+        };
+      })
+    );
+
+    const cap = config.wellfoundListingsCap;
+    const seen = new Set();
+    let inserted = 0;
+    for (const l of leads) {
+      if (inserted >= cap) break;
+      if (!l.company) continue;
+      const slug = l.slug || l.company.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      if (seen.has(slug)) continue;
+      seen.add(slug);
+
+      const notes = JSON.stringify({
+        funding_stage: l.funding_stage,
+        employee_count: l.employee_count,
+        slug,
+      });
+      const { inserted: didInsert } = insertLead({
+        source: 'wellfound',
+        company: l.company,
+        company_url: l.company_url,
+        name: l.name,
+        title: l.title,
+        linkedin_url: l.linkedin_url,
+        score: 60,
+        status: 'new',
+        notes,
+      });
+      if (didInsert) inserted += 1;
+    }
+
+    logger.info('scrapeWellfound complete', { inserted, extracted: leads.length, cap });
+    return { inserted };
   } catch (err) {
     logger.error('scrapeWellfound failed', { error: err.message });
     return { inserted: 0 };
