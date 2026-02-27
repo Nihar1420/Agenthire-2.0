@@ -36,12 +36,38 @@ export function applyPattern(pattern, name, domain) {
   return `${local}@${domain}`;
 }
 
-/** Extract a company domain from a lead. Full version (blocklist etc.) lands in a later commit. */
+// Directory / aggregator hosts that are never a company's own email domain.
+const DIRECTORY_HOSTS = [
+  'wellfound.com',
+  'angel.co',
+  'linkedin.com',
+  'crunchbase.com',
+  'github.com',
+  'twitter.com',
+  'x.com',
+  'facebook.com',
+  'instagram.com',
+  'medium.com',
+  'notion.site',
+  'google.com',
+  'ycombinator.com',
+  'indeed.com',
+  'glassdoor.com',
+];
+
+function isDirectoryHost(host) {
+  return DIRECTORY_HOSTS.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+/**
+ * Extract a company's own email domain from a lead. Prefers company_url's host (minus
+ * www.), but rejects directory/aggregator hosts and falls back to a name-slug .com.
+ */
 export function extractDomain(lead) {
   if (lead.company_url) {
     try {
-      const host = new URL(lead.company_url).hostname.replace(/^www\./, '');
-      if (host) return host;
+      const host = new URL(lead.company_url).hostname.replace(/^www\./, '').toLowerCase();
+      if (host && !isDirectoryHost(host)) return host;
     } catch {
       /* fall through */
     }
