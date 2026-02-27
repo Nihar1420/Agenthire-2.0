@@ -214,6 +214,15 @@ export function findApplicationBySenderEmail(email) {
   `).get(email);
 }
 
+/** Total emails/applications sent today (local date) — feeds the global send cap. */
+export function getTodayTotalSendCount() {
+  const row = stmt(`
+    SELECT COUNT(*) AS n FROM applications
+    WHERE date(sent_at) = date('now', 'localtime')
+  `).get();
+  return row ? row.n : 0;
+}
+
 /** Count applications of a given type sent today (local date), for daily-cap checks. */
 export function getTodayApplicationCountByType(type) {
   const row = stmt(`
