@@ -7,7 +7,13 @@ import net from 'node:net';
 import { resolveMx } from 'node:dns/promises';
 import config from '../core/config.js';
 import logger from '../utils/logger.js';
-import { getEmailPattern } from '../db/queries.js';
+import {
+  getEmailPattern,
+  saveEmailPattern,
+  getLeadsWithoutEmail,
+  updateLeadEnrichment,
+  updateLeadStatus,
+} from '../db/queries.js';
 
 const SMTP_TIMEOUT_MS = 8000;
 const MAIL_FROM = () => `verify@${config.sendingDomain || 'example.com'}`;
@@ -198,6 +204,74 @@ export async function findEmail(lead) {
   }
 
   return null;
+}
+
+/** Persist a winning email + (optional) learned pattern for a lead. */
+function persistLeadEmail(lead, result) {
+  updateLeadEnrichment(lead.id, { email: result.email, email_status: result.status });
+  if (result.pattern) {
+    const domain = extractDomain(lead);
+    if (domain) saveEmailPattern(domain, result.pattern, result.status === 'verified' ? 1 : 0);
+  }
+}
+
+/**
+ * Batch driver: find emails for leads that lack one. On a clean miss, mark the lead
+ * 'email_not_found' so we don't re-bill paid methods on the next cycle.
+ * @returns {Promise<{found:number, missed:number}>}
+ */
+export async function findEmailsForLeads(limit = 25) {
+  const leads = getLeadsWithoutEmail(limit);
+  let found = 0;
+  let missed = 0;
+  for (const lead of leads) {
+    try {
+      const result = await findEmail(lead);
+      if (result && result.email) {
+        persistLeadEmail(lead, result);
+        found += 1;
+      } else {
+        updateLeadStatus(lead.id, 'email_not_found');
+        missed += 1;
+      }
+    } catch (err) {
+      logger.warn('findEmailsForLeads: lead failed', { leadId: lead.id, error: err.message });
+    }
+  }
+  logger.info('findEmailsForLeads complete', { found, missed, considered: leads.length });
+  return { found, missed };
+}
+
+/**
+ * Batch driver for user-added contacts. The contacts table + queries land in a later phase,
+ * so we import them lazily to keep this module loadable before they exist.
+ * @returns {Promise<{found:number, missed:number}>}
+ */
+export async function findEmailsForContacts(limit = 25) {
+  const q = await import('../db/queries.js');
+  if (typeof q.getContactsWithoutEmail !== 'function') {
+    logger.debug('findEmailsForContacts: contacts layer not available yet');
+    return { found: 0, missed: 0 };
+  }
+  const contacts = q.getContactsWithoutEmail(limit);
+  let found = 0;
+  let missed = 0;
+  for (const c of contacts) {
+    try {
+      const result = await findEmail(c);
+      if (result && result.email) {
+        q.updateContactEmail(c.id, result.email, result.status);
+        found += 1;
+      } else {
+        q.updateContactEmail(c.id, null, 'email_not_found');
+        missed += 1;
+      }
+    } catch (err) {
+      logger.warn('findEmailsForContacts: contact failed', { contactId: c.id, error: err.message });
+    }
+  }
+  logger.info('findEmailsForContacts complete', { found, missed, considered: contacts.length });
+  return { found, missed };
 }
 
 export default findEmail;
