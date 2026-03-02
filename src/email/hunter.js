@@ -176,9 +176,36 @@ async function smtpGuess(name, domain) {
   return null;
 }
 
+/** Method 3: Apollo /people/match by name + company. Skipped when APOLLO_ENABLED=false. */
+async function apolloMatch(lead) {
+  if (!config.apolloEnabled || !config.apolloApiKey || !lead.name) return null;
+  const { first, last } = splitName(lead.name);
+  try {
+    const res = await fetch('https://api.apollo.io/v1/people/match', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
+      body: JSON.stringify({
+        api_key: config.apolloApiKey,
+        first_name: first,
+        last_name: last,
+        organization_name: lead.company || undefined,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const email = data?.person?.email;
+    if (email && !/email_not_unlocked/i.test(email)) {
+      return { email: email.toLowerCase(), method: 'apollo', status: 'verified' };
+    }
+  } catch (err) {
+    logger.debug('apolloMatch failed', { error: err.message });
+  }
+  return null;
+}
+
 /**
  * Find an email for a lead. Returns { email, method, status } or null.
- * Method 1: verified email_patterns row. Method 2: SMTP RCPT-TO guess.
+ * Methods in order: 1 DB pattern · 2 SMTP guess · 3 Apollo.
  */
 export async function findEmail(lead) {
   const domain = extractDomain(lead);
@@ -201,6 +228,13 @@ export async function findEmail(lead) {
       logger.debug('findEmail: hit via smtp', { domain, email: smtp.email });
       return { email: smtp.email, method: 'smtp', status: 'verified', pattern: smtp.pattern };
     }
+  }
+
+  // ── Method 3: Apollo people/match ──
+  const apollo = await apolloMatch(lead);
+  if (apollo) {
+    logger.debug('findEmail: hit via apollo', { email: apollo.email });
+    return apollo;
   }
 
   return null;
