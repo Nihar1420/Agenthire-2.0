@@ -203,9 +203,62 @@ async function apolloMatch(lead) {
   return null;
 }
 
+// Snov OAuth token cache.
+let _snovToken = null;
+let _snovTokenExp = 0;
+
+async function snovToken() {
+  if (_snovToken && Date.now() < _snovTokenExp) return _snovToken;
+  if (!config.snovClientId || !config.snovClientSecret) return null;
+  try {
+    const res = await fetch('https://api.snov.io/v1/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'client_credentials',
+        client_id: config.snovClientId,
+        client_secret: config.snovClientSecret,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    _snovToken = data.access_token;
+    _snovTokenExp = Date.now() + (data.expires_in ? data.expires_in * 1000 : 3000_000) - 60_000;
+    return _snovToken;
+  } catch {
+    return null;
+  }
+}
+
+/** Method 4: Snov.io get-emails-from-names (name + domain). */
+async function snovFind(lead, domain) {
+  const token = await snovToken();
+  if (!token || !lead.name) return null;
+  const { first, last } = splitName(lead.name);
+  try {
+    const url =
+      `https://api.snov.io/v1/get-emails-from-names?access_token=${encodeURIComponent(token)}` +
+      `&firstName=${encodeURIComponent(first)}&lastName=${encodeURIComponent(last)}` +
+      `&domain=${encodeURIComponent(domain)}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const emails = data?.data?.emails || data?.emails || [];
+    const valid = emails.find((e) => /valid/i.test(e.status || e.smtp_status || '')) || emails[0];
+    const email = valid?.email;
+    if (email) {
+      const status = /valid/i.test(valid.status || valid.smtp_status || '') ? 'verified' : 'guessed';
+      return { email: email.toLowerCase(), method: 'snov', status };
+    }
+  } catch (err) {
+    logger.debug('snovFind failed', { error: err.message });
+  }
+  return null;
+}
+
 /**
  * Find an email for a lead. Returns { email, method, status } or null.
- * Methods in order: 1 DB pattern · 2 SMTP guess · 3 Apollo.
+ * Methods in order: 1 DB pattern · 2 SMTP guess · 3 Apollo · 4 Snov.
  */
 export async function findEmail(lead) {
   const domain = extractDomain(lead);
@@ -235,6 +288,13 @@ export async function findEmail(lead) {
   if (apollo) {
     logger.debug('findEmail: hit via apollo', { email: apollo.email });
     return apollo;
+  }
+
+  // ── Method 4: Snov.io ──
+  const snov = await snovFind(lead, domain);
+  if (snov) {
+    logger.debug('findEmail: hit via snov', { email: snov.email });
+    return snov;
   }
 
   return null;
