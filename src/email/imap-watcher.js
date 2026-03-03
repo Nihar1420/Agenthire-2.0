@@ -6,9 +6,16 @@
 import { ImapFlow } from 'imapflow';
 import config from '../core/config.js';
 import logger from '../utils/logger.js';
-import { findApplicationBySenderEmail, findApplicationBySenderDomain } from '../db/queries.js';
+import {
+  findApplicationBySenderEmail,
+  findApplicationBySenderDomain,
+  updateApplicationStatus,
+  insertOutcome,
+} from '../db/queries.js';
 
 const POLL_INTERVAL_MS = 3 * 60 * 1000;
+const BACKOFF_MIN_MS = 5000;
+const BACKOFF_MAX_MS = 60000;
 
 const FREEMAIL = new Set([
   'gmail.com',
@@ -75,6 +82,67 @@ export async function pollOnce(client) {
     lock.release();
   }
   return matches;
+}
+
+/** Record a matched reply: flip the application to 'replied' and log an outcome. */
+export async function handleMatch(match) {
+  updateApplicationStatus(match.app.id, 'replied');
+  insertOutcome({
+    application_id: match.app.id,
+    type: 'reply',
+    detail: `From ${match.from}: ${match.subject || ''}`.slice(0, 500),
+  });
+  logger.info('imap: application marked replied', { appId: match.app.id, company: match.app.company });
+}
+
+function isAuthError(err) {
+  const m = (err?.message || '').toLowerCase();
+  return err?.authenticationFailed || /auth|credential|invalid login|application-specific/.test(m);
+}
+
+/**
+ * Connect and poll forever. Reconnects with exponential backoff (5s → 60s). A permanent
+ * auth failure stops the watcher (retrying would just lock the account).
+ */
+export async function startWatcher() {
+  let backoff = BACKOFF_MIN_MS;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const client = makeClient();
+    try {
+      await client.connect();
+      logger.info('imap: connected, watching INBOX');
+      backoff = BACKOFF_MIN_MS; // reset after a good connection
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const matches = await pollOnce(client);
+        for (const match of matches) {
+          // eslint-disable-next-line no-await-in-loop
+          await handleMatch(match);
+        }
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      }
+    } catch (err) {
+      if (isAuthError(err)) {
+        logger.error('imap: authentication failed — stopping watcher permanently', {
+          error: err.message,
+        });
+        return;
+      }
+      logger.warn('imap: connection lost, reconnecting', { backoffMs: backoff, error: err.message });
+      await new Promise((r) => setTimeout(r, backoff));
+      backoff = Math.min(BACKOFF_MAX_MS, backoff * 2);
+    } finally {
+      try {
+        await client.logout();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
 }
 
 export { POLL_INTERVAL_MS, makeClient };
