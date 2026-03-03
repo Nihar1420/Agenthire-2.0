@@ -256,9 +256,32 @@ async function snovFind(lead, domain) {
   return null;
 }
 
+/** Method 5: Hunter.io email-finder (domain + name). */
+async function hunterFind(lead, domain) {
+  if (!config.hunterApiKey || !lead.name) return null;
+  const { first, last } = splitName(lead.name);
+  try {
+    const url =
+      `https://api.hunter.io/v2/email-finder?domain=${encodeURIComponent(domain)}` +
+      `&first_name=${encodeURIComponent(first)}&last_name=${encodeURIComponent(last)}` +
+      `&api_key=${encodeURIComponent(config.hunterApiKey)}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const email = data?.data?.email;
+    if (email) {
+      const score = data?.data?.score ?? 0;
+      return { email: email.toLowerCase(), method: 'hunter', status: score >= 80 ? 'verified' : 'guessed' };
+    }
+  } catch (err) {
+    logger.debug('hunterFind failed', { error: err.message });
+  }
+  return null;
+}
+
 /**
  * Find an email for a lead. Returns { email, method, status } or null.
- * Methods in order: 1 DB pattern · 2 SMTP guess · 3 Apollo · 4 Snov.
+ * Methods in order: 1 DB pattern · 2 SMTP guess · 3 Apollo · 4 Snov · 5 Hunter.io.
  */
 export async function findEmail(lead) {
   const domain = extractDomain(lead);
@@ -295,6 +318,13 @@ export async function findEmail(lead) {
   if (snov) {
     logger.debug('findEmail: hit via snov', { email: snov.email });
     return snov;
+  }
+
+  // ── Method 5: Hunter.io ──
+  const hunter = await hunterFind(lead, domain);
+  if (hunter) {
+    logger.debug('findEmail: hit via hunter', { email: hunter.email });
+    return hunter;
   }
 
   return null;
