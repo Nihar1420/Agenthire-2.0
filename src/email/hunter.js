@@ -280,8 +280,47 @@ async function hunterFind(lead, domain) {
 }
 
 /**
+ * Method 6: Prospeo LinkedIn→email. HARD-GATED — only called when score ≥ prospeoMinScore
+ * AND a linkedin_url is present, because Prospeo burns paid credits. Saves the winning
+ * pattern to email_patterns for future free lookups.
+ */
+async function prospeoFind(lead, domain) {
+  if (!config.prospeoApiKey) return null;
+  if ((lead.score ?? 0) < config.prospeoMinScore) return null; // gate: score
+  if (!lead.linkedin_url) return null; // gate: LinkedIn URL required
+  try {
+    const res = await fetch('https://api.prospeo.io/linkedin-email-finder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-KEY': config.prospeoApiKey },
+      body: JSON.stringify({ url: lead.linkedin_url }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const email = data?.response?.email || data?.email;
+    if (email) {
+      const lc = email.toLowerCase();
+      // Learn the pattern so we don't pay next time for this domain.
+      if (lead.name && domain) {
+        const { first, last } = splitName(lead.name);
+        const local = lc.split('@')[0];
+        let pattern = null;
+        if (last && local === `${first}.${last}`) pattern = '{first}.{last}';
+        else if (last && local === `${first[0]}${last}`) pattern = '{f}{last}';
+        else if (last && local === `${first}${last}`) pattern = '{first}{last}';
+        else if (local === first) pattern = '{first}';
+        if (pattern) saveEmailPattern(domain, pattern, 1);
+      }
+      return { email: lc, method: 'prospeo', status: 'verified' };
+    }
+  } catch (err) {
+    logger.debug('prospeoFind failed', { error: err.message });
+  }
+  return null;
+}
+
+/**
  * Find an email for a lead. Returns { email, method, status } or null.
- * Methods in order: 1 DB pattern · 2 SMTP guess · 3 Apollo · 4 Snov · 5 Hunter.io.
+ * Methods in order: 1 DB pattern · 2 SMTP guess · 3 Apollo · 4 Snov · 5 Hunter.io · 6 Prospeo (gated).
  */
 export async function findEmail(lead) {
   const domain = extractDomain(lead);
@@ -325,6 +364,13 @@ export async function findEmail(lead) {
   if (hunter) {
     logger.debug('findEmail: hit via hunter', { email: hunter.email });
     return hunter;
+  }
+
+  // ── Method 6: Prospeo (hard-gated) ──
+  const prospeo = await prospeoFind(lead, domain);
+  if (prospeo) {
+    logger.debug('findEmail: hit via prospeo', { email: prospeo.email });
+    return prospeo;
   }
 
   return null;
