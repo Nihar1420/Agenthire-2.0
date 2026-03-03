@@ -232,6 +232,14 @@ export function getTodayApplicationCountByType(type) {
   return row ? row.n : 0;
 }
 
+/** Most recent application whose recipient shares the given (real company) domain. */
+export function findApplicationBySenderDomain(domain) {
+  return stmt(`
+    SELECT * FROM applications
+    WHERE to_email LIKE '%@' || ? ORDER BY sent_at DESC LIMIT 1
+  `).get(domain);
+}
+
 export function getActiveApplicationsForSequence() {
   return stmt(`
     SELECT * FROM applications
