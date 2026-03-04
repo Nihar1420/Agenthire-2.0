@@ -84,7 +84,7 @@ export async function pollOnce(client) {
   return matches;
 }
 
-/** Record a matched reply: flip the application to 'replied' and log an outcome. */
+/** Record a matched reply: flip to 'replied', log an outcome, and fire a push notification. */
 export async function handleMatch(match) {
   updateApplicationStatus(match.app.id, 'replied');
   insertOutcome({
@@ -93,6 +93,19 @@ export async function handleMatch(match) {
     detail: `From ${match.from}: ${match.subject || ''}`.slice(0, 500),
   });
   logger.info('imap: application marked replied', { appId: match.app.id, company: match.app.company });
+
+  // Fire an instant push (best-effort, dynamically loaded so a missing FCM config is harmless).
+  try {
+    const { sendPush } = await import('../notify/push.js');
+    const company = match.app.company || 'a company';
+    await sendPush({
+      title: `Client replied — ${company}`,
+      body: (match.subject || match.from || '').slice(0, 140),
+      data: { applicationId: match.app.id, from: match.from || '' },
+    });
+  } catch (err) {
+    logger.debug('imap: push failed (non-fatal)', { error: err.message });
+  }
 }
 
 function isAuthError(err) {
