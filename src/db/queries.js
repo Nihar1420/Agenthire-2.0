@@ -321,6 +321,61 @@ export function updateCycleLog(id, fields) {
   });
 }
 
+// ─────────────────────────────────────────────────────────
+// ANALYTICS
+// ─────────────────────────────────────────────────────────
+
+/** Rolling 24-hour counts for the daily digest. */
+export function getLast24HourStats() {
+  const since = `datetime('now', '-1 day')`;
+  const one = (sql, ...args) => (stmt(sql).get(...args)?.n ?? 0);
+  return {
+    jobs_found: one(`SELECT COUNT(*) n FROM jobs WHERE created_at >= ${since}`),
+    jobs_scored: one(`SELECT COUNT(*) n FROM jobs WHERE scored_at >= ${since}`),
+    leads_found: one(`SELECT COUNT(*) n FROM leads WHERE created_at >= ${since}`),
+    emails_found: one(
+      `SELECT COUNT(*) n FROM leads WHERE email IS NOT NULL AND email != '' AND updated_at >= ${since}`
+    ),
+    applications_sent: one(
+      `SELECT COUNT(*) n FROM applications WHERE type IN ('upwork_apply','email_apply') AND sent_at >= ${since}`
+    ),
+    cold_emails_sent: one(`SELECT COUNT(*) n FROM applications WHERE type='cold_email' AND sent_at >= ${since}`),
+    replies: one(`SELECT COUNT(*) n FROM outcomes WHERE type='reply' AND created_at >= ${since}`),
+  };
+}
+
+/** All-time headline counters. */
+export function getAllTimeStats() {
+  const one = (sql) => (stmt(sql).get()?.n ?? 0);
+  return {
+    jobs: one(`SELECT COUNT(*) n FROM jobs`),
+    leads: one(`SELECT COUNT(*) n FROM leads`),
+    applications: one(`SELECT COUNT(*) n FROM applications`),
+    replies: one(`SELECT COUNT(*) n FROM outcomes WHERE type='reply'`),
+  };
+}
+
+/**
+ * Data for the weekly reflector: applications from the last 28 days joined to their job
+ * (for platform) plus reply status, with body length and send hour for correlation.
+ */
+export function getReflectionData() {
+  return stmt(`
+    SELECT
+      a.id,
+      a.type,
+      a.company,
+      a.status,
+      length(a.body) AS body_len,
+      CAST(strftime('%H', a.sent_at) AS INTEGER) AS send_hour,
+      j.platform AS platform,
+      CASE WHEN a.status = 'replied' THEN 1 ELSE 0 END AS replied
+    FROM applications a
+    LEFT JOIN jobs j ON j.id = a.job_id
+    WHERE a.sent_at >= datetime('now', '-28 days')
+  `).all();
+}
+
 /** Test/maintenance hook: drop the prepared-statement cache. */
 export function _resetStmtCache() {
   _cache.clear();
