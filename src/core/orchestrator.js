@@ -3,6 +3,7 @@
 // runCycle() runs the pipeline in order: feed scrapers → scoring → apply. Counts,
 // cycle logging, the scheduler, and later tracks are layered on in subsequent commits.
 
+import cron from 'node-cron';
 import logger from '../utils/logger.js';
 import { insertCycleLog, updateCycleLog } from '../db/queries.js';
 
@@ -78,6 +79,23 @@ export async function runCycle() {
 
   logger.info('cycle complete', { ...counts, failed: errors.length });
   return { cycleId, steps, counts };
+}
+
+const TZ = 'Asia/Kolkata';
+const CRON = '0 */2 * * *'; // every 2 hours
+
+/**
+ * Start the orchestrator: fire one cycle immediately (fire-and-forget), then run every 2h.
+ */
+export function startOrchestrator() {
+  logger.info('orchestrator starting — firing initial cycle');
+  runCycle().catch((err) => logger.error('initial cycle failed', { error: err.message }));
+
+  cron.schedule(CRON, () => {
+    runCycle().catch((err) => logger.error('scheduled cycle failed', { error: err.message }));
+  }, { timezone: TZ });
+
+  logger.info('orchestrator scheduled', { cron: CRON, timezone: TZ });
 }
 
 export default runCycle;
