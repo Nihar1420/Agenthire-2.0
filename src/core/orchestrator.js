@@ -98,4 +98,16 @@ export function startOrchestrator() {
   logger.info('orchestrator scheduled', { cron: CRON, timezone: TZ });
 }
 
+// Direct-run support: `node src/core/orchestrator.js --once` runs a single cycle and exits;
+// without --once it starts the scheduler.
+if (process.argv[1] && process.argv[1].endsWith('orchestrator.js')) {
+  if (process.argv.includes('--once')) {
+    runCycle()
+      .then(() => process.exit(0))
+      .catch(() => process.exit(1));
+  } else {
+    startOrchestrator();
+  }
+}
+
 export default runCycle;
