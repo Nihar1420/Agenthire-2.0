@@ -4,6 +4,7 @@
 // cycle logging, the scheduler, and later tracks are layered on in subsequent commits.
 
 import logger from '../utils/logger.js';
+import { insertCycleLog, updateCycleLog } from '../db/queries.js';
 
 import scrapeWWR from '../scrapers/wwr.js';
 import scrapeRemotive from '../scrapers/remotive.js';
@@ -30,9 +31,19 @@ export async function runStep(name, fn) {
   }
 }
 
-/** Run one full cycle. Returns the array of step results. */
+/** Sum a field across the named steps' successful results. */
+function sumField(steps, names, field) {
+  return steps
+    .filter((s) => names.includes(s.name) && s.ok && s.result)
+    .reduce((acc, s) => acc + (s.result[field] || 0), 0);
+}
+
+const JOB_FEEDS = ['scrapeWWR', 'scrapeRemotive', 'scrapeRemoteOK', 'scrapeHackerNews', 'scrapeUpwork'];
+
+/** Run one full cycle. Opens a cycle_logs row, runs the pipeline, and records counts + errors. */
 export async function runCycle() {
   logger.info('cycle starting');
+  const cycleId = insertCycleLog();
   const steps = [];
 
   // ── Feeds ──
@@ -49,8 +60,24 @@ export async function runCycle() {
   // ── Apply ──
   steps.push(await runStep('applyToJobs', applyToJobs));
 
-  logger.info('cycle complete', { steps: steps.length, failed: steps.filter((s) => !s.ok).length });
-  return steps;
+  const counts = {
+    jobs_found: sumField(steps, JOB_FEEDS, 'inserted'),
+    leads_found: sumField(steps, ['scrapeWellfound'], 'inserted'),
+    jobs_scored: sumField(steps, ['scoreUnscoredJobs'], 'scored'),
+    emails_found: 0,
+    proposals_sent: sumField(steps, ['applyToJobs'], 'applied'),
+  };
+  const errors = steps.filter((s) => !s.ok).map((s) => `${s.name}: ${s.error}`);
+
+  updateCycleLog(cycleId, {
+    finished_at: new Date().toISOString(),
+    status: errors.length ? 'completed_with_errors' : 'completed',
+    ...counts,
+    errors: errors.length ? JSON.stringify(errors) : null,
+  });
+
+  logger.info('cycle complete', { ...counts, failed: errors.length });
+  return { cycleId, steps, counts };
 }
 
 export default runCycle;
