@@ -4,8 +4,13 @@
 // jobs table. Opportunities with an applyEmail are normal jobs; those without are flagged
 // as needing a contact lookup (hirer queue).
 
+import config from '../core/config.js';
 import logger from '../utils/logger.js';
 import { insertJob } from '../db/queries.js';
+import { createRssAdapter } from './adapters/rss.js';
+import { createJsonAdapter } from './adapters/json-api.js';
+import { createHtmlAdapter } from './adapters/html.js';
+import { stripHtml, extractEmail } from './text.js';
 
 const adapters = [];
 
@@ -69,5 +74,55 @@ export async function runCrawler() {
   logger.info('runCrawler complete', { inserted, adapters: adapters.length });
   return { inserted };
 }
+
+// ─────────────────────────────────────────────────────────
+// Live source registrations (run once at import).
+// ─────────────────────────────────────────────────────────
+
+registerAdapter(
+  createRssAdapter({ name: 'RemoteYeah', source: 'remoteyeah', url: 'https://remoteyeah.com/rss.xml', splitTitle: true })
+);
+registerAdapter(
+  createRssAdapter({
+    name: 'RealWorkFromAnywhere',
+    source: 'realworkfromanywhere',
+    url: 'https://www.realworkfromanywhere.com/feed.xml',
+    splitTitle: true,
+  })
+);
+registerAdapter(
+  createJsonAdapter({
+    name: 'Himalayas',
+    source: 'himalayas',
+    url: 'https://himalayas.app/jobs/api',
+    paginate: { limit: 50, maxPages: 3, offsetParam: 'offset', limitParam: 'limit' },
+    mapItem: (j) => ({
+      title: j.title || j.jobTitle,
+      company: j.companyName || j.company?.name,
+      url: j.applicationLink || j.guid || j.url,
+      description: stripHtml(j.description || j.excerpt || ''),
+      applyEmail: extractEmail(j.description || ''),
+    }),
+  })
+);
+registerAdapter(
+  createJsonAdapter({
+    name: 'Jobicy',
+    source: 'jobicy',
+    url: 'https://jobicy.com/api/v2/remote-jobs?count=50',
+    mapItem: (j) => ({
+      title: j.jobTitle || j.title,
+      company: j.companyName,
+      url: j.url,
+      description: stripHtml(j.jobDescription || j.jobExcerpt || ''),
+      applyEmail: extractEmail(j.jobDescription || ''),
+    }),
+  })
+);
+
+// Config-gated static HTML career page (dormant unless CRAWLER_HTML_CAREER_URL is set).
+registerAdapter(
+  createHtmlAdapter({ name: 'CareerPage', source: 'career-page', url: config.crawlerHtmlCareerUrl })
+);
 
 export default runCrawler;
