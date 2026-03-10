@@ -124,7 +124,23 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_patterns_domain ON email_patterns(domain);
   `);
 
+  // ── Idempotent column additions (hirer queue) ──
+  addColumnIfMissing(d, 'jobs', 'needs_contact', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(d, 'jobs', 'location', 'TEXT');
+  addColumnIfMissing(d, 'jobs', 'contact_lookup_status', 'TEXT');
+
+  // Backfill: rows routed as 'needs_contact' (before the column existed) get the flag set.
+  d.prepare(`UPDATE jobs SET needs_contact = 1 WHERE status = 'needs_contact' AND needs_contact = 0`).run();
+
   return d;
+}
+
+/** ADD COLUMN only when it doesn't already exist (SQLite has no IF NOT EXISTS for columns). */
+function addColumnIfMissing(d, table, column, definition) {
+  const cols = d.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) {
+    d.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }
 
 /** Close the shared connection (used by short-lived scripts / tests). */
