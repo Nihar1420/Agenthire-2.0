@@ -15,6 +15,7 @@ import scrapeWellfound from '../scrapers/wellfound.js';
 import scrapeUpwork from '../scrapers/upwork.js';
 import { scoreUnscoredJobs } from '../intelligence/scorer.js';
 import applyToJobs from '../scrapers/apply.js';
+import runCrawler from '../crawler/index.js';
 
 /**
  * Run a named step. Never throws — returns { name, ok, result?, error? } so the cycle can
@@ -39,7 +40,7 @@ function sumField(steps, names, field) {
     .reduce((acc, s) => acc + (s.result[field] || 0), 0);
 }
 
-const JOB_FEEDS = ['scrapeWWR', 'scrapeRemotive', 'scrapeRemoteOK', 'scrapeHackerNews', 'scrapeUpwork'];
+const JOB_FEEDS = ['scrapeWWR', 'scrapeRemotive', 'scrapeRemoteOK', 'scrapeHackerNews', 'scrapeUpwork', 'crawlSources'];
 
 /** Run one full cycle. Opens a cycle_logs row, runs the pipeline, and records counts + errors. */
 export async function runCycle() {
@@ -54,6 +55,9 @@ export async function runCycle() {
   steps.push(await runStep('scrapeHackerNews', scrapeHackerNews));
   steps.push(await runStep('scrapeWellfound', scrapeWellfound));
   steps.push(await runStep('scrapeUpwork', scrapeUpwork));
+
+  // ── Pluggable crawler sources ──
+  steps.push(await runStep('crawlSources', runCrawler));
 
   // ── Score ──
   steps.push(await runStep('scoreUnscoredJobs', () => scoreUnscoredJobs(50)));
