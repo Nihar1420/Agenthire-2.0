@@ -122,6 +122,28 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_apps_type      ON applications(type);
     CREATE INDEX IF NOT EXISTS idx_apps_sent_at   ON applications(sent_at);
     CREATE INDEX IF NOT EXISTS idx_patterns_domain ON email_patterns(domain);
+
+    CREATE TABLE IF NOT EXISTS contacts (
+      id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_type               TEXT,
+      source_id                 INTEGER,
+      name                      TEXT,
+      company                   TEXT,
+      linkedin_url              TEXT,
+      email                     TEXT,
+      email_status              TEXT,
+      status                    TEXT NOT NULL DEFAULT 'new',
+      send_requested            INTEGER NOT NULL DEFAULT 0,
+      track                     TEXT,
+      verification_submitted_at TEXT,
+      created_at                TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at                TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_contacts_status       ON contacts(status);
+    CREATE INDEX IF NOT EXISTS idx_contacts_email_status ON contacts(email_status);
+    CREATE INDEX IF NOT EXISTS idx_contacts_send_req     ON contacts(send_requested);
+    CREATE INDEX IF NOT EXISTS idx_contacts_track        ON contacts(track);
   `);
 
   // ── Idempotent column additions (hirer queue) ──
