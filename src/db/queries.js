@@ -322,6 +322,39 @@ export function updateCycleLog(id, fields) {
 }
 
 // ─────────────────────────────────────────────────────────
+// HIRER QUEUE (jobs needing a contact lookup)
+// ─────────────────────────────────────────────────────────
+
+/** Jobs flagged as needing a decision-maker contact, best-scored first. */
+export function getHirerQueueJobs(limit = 50) {
+  return stmt(`
+    SELECT * FROM jobs
+    WHERE needs_contact = 1
+      AND (contact_lookup_status IS NULL OR contact_lookup_status NOT IN ('outreach_sent'))
+    ORDER BY score DESC NULLS LAST, created_at DESC
+    LIMIT ?
+  `).all(limit);
+}
+
+/** Jobs still awaiting a contact lookup (not yet attempted). */
+export function getJobsNeedingContactLookup(limit = 25) {
+  return stmt(`
+    SELECT * FROM jobs
+    WHERE needs_contact = 1 AND contact_lookup_status IS NULL
+    ORDER BY score DESC NULLS LAST
+    LIMIT ?
+  `).all(limit);
+}
+
+export function setJobContactLookupStatus(id, status) {
+  return stmt(`UPDATE jobs SET contact_lookup_status = ? WHERE id = ?`).run(status, id);
+}
+
+export function setJobNeedsContact(id, flag = 1) {
+  return stmt(`UPDATE jobs SET needs_contact = ? WHERE id = ?`).run(flag ? 1 : 0, id);
+}
+
+// ─────────────────────────────────────────────────────────
 // ANALYTICS
 // ─────────────────────────────────────────────────────────
 
