@@ -355,6 +355,108 @@ export function setJobNeedsContact(id, flag = 1) {
 }
 
 // ─────────────────────────────────────────────────────────
+// CONTACTS
+// ─────────────────────────────────────────────────────────
+
+export function insertContact(c) {
+  const info = stmt(`
+    INSERT INTO contacts (source_type, source_id, name, company, linkedin_url, email,
+                          email_status, status, send_requested, track)
+    VALUES (@source_type, @source_id, @name, @company, @linkedin_url, @email,
+            @email_status, @status, @send_requested, @track)
+  `).run({
+    source_type: c.source_type ?? null,
+    source_id: c.source_id ?? null,
+    name: c.name ?? null,
+    company: c.company ?? null,
+    linkedin_url: c.linkedin_url ?? null,
+    email: c.email ?? null,
+    email_status: c.email_status ?? null,
+    status: c.status ?? 'new',
+    send_requested: c.send_requested ? 1 : 0,
+    track: c.track ?? null,
+  });
+  return { id: Number(info.lastInsertRowid) };
+}
+
+export function getContactById(id) {
+  return stmt(`SELECT * FROM contacts WHERE id = ?`).get(id);
+}
+
+export function contactExistsByLinkedIn(url) {
+  if (!url) return false;
+  return !!stmt(`SELECT 1 FROM contacts WHERE linkedin_url = ? LIMIT 1`).get(url);
+}
+
+export function getContactsWithoutEmail(limit = 25) {
+  return stmt(`
+    SELECT * FROM contacts
+    WHERE (email IS NULL OR email = '')
+      AND status NOT IN ('email_not_found', 'unverifiable')
+    ORDER BY created_at ASC
+    LIMIT ?
+  `).all(limit);
+}
+
+/** Contacts by email verification state (guessed / verifying / verified / ...). */
+export function getContactsByEmailStatus(status, limit = 100) {
+  return stmt(`SELECT * FROM contacts WHERE email_status = ? ORDER BY created_at ASC LIMIT ?`).all(status, limit);
+}
+
+export function updateContactEmail(id, email, emailStatus) {
+  return stmt(`
+    UPDATE contacts SET email = COALESCE(?, email), email_status = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(email, emailStatus, id);
+}
+
+export function updateContactEmailStatus(id, emailStatus) {
+  return stmt(`UPDATE contacts SET email_status = ?, updated_at = datetime('now') WHERE id = ?`).run(emailStatus, id);
+}
+
+/** Mark a guessed contact as submitted for verification (guessed → verifying). */
+export function markContactVerifying(id) {
+  return stmt(`
+    UPDATE contacts
+    SET email_status = 'verifying', verification_submitted_at = datetime('now'), updated_at = datetime('now')
+    WHERE id = ?
+  `).run(id);
+}
+
+export function updateContactStatus(id, status) {
+  return stmt(`UPDATE contacts SET status = ?, updated_at = datetime('now') WHERE id = ?`).run(status, id);
+}
+
+/** Contacts a user has queued for sending (send_requested = 1). */
+export function getSendRequestedContacts(limit = 50) {
+  return stmt(`
+    SELECT * FROM contacts
+    WHERE send_requested = 1 AND status NOT IN ('outreach_sent')
+    ORDER BY updated_at DESC
+    LIMIT ?
+  `).all(limit);
+}
+
+export function setContactSendRequested(id, flag = 1) {
+  return stmt(`UPDATE contacts SET send_requested = ?, updated_at = datetime('now') WHERE id = ?`).run(
+    flag ? 1 : 0,
+    id
+  );
+}
+
+/** Contacts with a usable email, ready for outreach on a given track. */
+export function getContactsReadyForOutreach(limit = 50) {
+  return stmt(`
+    SELECT * FROM contacts
+    WHERE email IS NOT NULL AND email != ''
+      AND email_status IN ('verified', 'guessed')
+      AND status NOT IN ('outreach_sent')
+    ORDER BY created_at ASC
+    LIMIT ?
+  `).all(limit);
+}
+
+// ─────────────────────────────────────────────────────────
 // ANALYTICS
 // ─────────────────────────────────────────────────────────
 
