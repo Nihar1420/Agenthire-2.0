@@ -128,6 +128,31 @@ export function getLeadById(id) {
   return stmt(`SELECT * FROM leads WHERE id = ?`).get(id);
 }
 
+export function leadExistsByCompanySource(company, source) {
+  if (!company) return false;
+  return !!stmt(`SELECT 1 FROM leads WHERE lower(company) = lower(?) AND source = ? LIMIT 1`).get(company, source);
+}
+
+/** High-scoring jobs that lack a direct apply email — candidates for company outreach. */
+export function getHighScoreJobsWithoutApplyEmail(minScore, limit = 25) {
+  return stmt(`
+    SELECT DISTINCT company, url, score FROM jobs
+    WHERE score >= ? AND (apply_email IS NULL OR apply_email = '') AND company IS NOT NULL
+    ORDER BY score DESC
+    LIMIT ?
+  `).all(minScore, limit);
+}
+
+/** Distinct company names seen on the Remotive feed. */
+export function getRemotiveCompanies(limit = 25) {
+  return stmt(`
+    SELECT DISTINCT company FROM jobs
+    WHERE platform = 'remotive' AND company IS NOT NULL
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(limit);
+}
+
 export function leadExistsByLinkedIn(url) {
   if (!url) return false;
   return !!stmt(`SELECT 1 FROM leads WHERE linkedin_url = ? LIMIT 1`).get(url);
