@@ -12,6 +12,9 @@ import {
   getTodayApplicationCountByType,
   insertApplication,
   updateLeadStatus,
+  getContactsReadyForOutreach,
+  getContactById,
+  updateContactStatus,
 } from '../db/queries.js';
 
 const TYPE = 'cold_email';
@@ -66,6 +69,58 @@ export async function sendOutreachEmails(cap = config.devOutreachDailyCap) {
 
   logger.info('sendOutreachEmails complete', { sent });
   return { sent };
+}
+
+/** Send one cold email to a contact. Shared by the batch + single-send paths. */
+async function sendToContact(contact) {
+  if (!contact?.email) return { success: false, error: 'no email' };
+  const copy = await writeColdEmail(contact);
+  if (config.outreachDryRun) {
+    updateContactStatus(contact.id, 'outreach_sent');
+    return { success: true, dryRun: true };
+  }
+  const result = await sendEmail({ to: contact.email, subject: copy.subject, text: copy.body });
+  if (result.success) {
+    insertApplication({
+      type: TYPE,
+      to_email: contact.email,
+      company: contact.company,
+      subject: copy.subject,
+      body: copy.body,
+      status: 'sent',
+    });
+    updateContactStatus(contact.id, 'outreach_sent');
+  }
+  return result;
+}
+
+/** Batch outreach to user-added contacts. Cap default 50, re-checked mid-loop. */
+export async function sendContactOutreach(cap = config.contactOutreachDailyCap) {
+  const contacts = getContactsReadyForOutreach(cap * 2);
+  let sent = 0;
+  for (const contact of contacts) {
+    if (getTodayApplicationCountByType(TYPE) + sent >= config.globalDailySendCap) break;
+    if (sent >= cap) {
+      logger.info('sendContactOutreach: cap reached', { cap, sent });
+      break;
+    }
+    const r = await sendToContact(contact);
+    if (r.success) {
+      sent += 1;
+      await humanDelay(30000, 60000);
+    }
+  }
+  logger.info('sendContactOutreach complete', { sent });
+  return { sent };
+}
+
+/** Dashboard one-off: send to a single contact by id immediately. */
+export async function sendSingleContact(contactId) {
+  const contact = getContactById(contactId);
+  if (!contact) return { success: false, error: 'contact not found' };
+  const r = await sendToContact(contact);
+  logger.info('sendSingleContact', { contactId, success: r.success });
+  return r;
 }
 
 export default sendOutreachEmails;
