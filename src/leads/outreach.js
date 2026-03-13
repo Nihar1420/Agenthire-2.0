@@ -15,6 +15,8 @@ import {
   getContactsReadyForOutreach,
   getContactById,
   updateContactStatus,
+  getSendRequestedContacts,
+  setContactSendRequested,
 } from '../db/queries.js';
 
 const TYPE = 'cold_email';
@@ -111,6 +113,22 @@ export async function sendContactOutreach(cap = config.contactOutreachDailyCap) 
     }
   }
   logger.info('sendContactOutreach complete', { sent });
+  return { sent };
+}
+
+/** Drain the send-request queue: contacts a user explicitly flagged (send_requested=1). */
+export async function processSendRequests(limit = 25) {
+  const contacts = getSendRequestedContacts(limit);
+  let sent = 0;
+  for (const contact of contacts) {
+    const r = await sendToContact(contact);
+    setContactSendRequested(contact.id, 0); // clear the request regardless of outcome
+    if (r.success) {
+      sent += 1;
+      await humanDelay(20000, 45000);
+    }
+  }
+  logger.info('processSendRequests complete', { sent, considered: contacts.length });
   return { sent };
 }
 
