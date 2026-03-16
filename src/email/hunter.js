@@ -430,7 +430,10 @@ export async function findEmailsForContacts(limit = 25) {
     try {
       const result = await findEmail(c);
       if (result && result.email) {
-        q.updateContactEmail(c.id, result.email, result.status);
+        // Anything not already provably verified routes to Snov verification as 'guessed',
+        // so verifyGuessedContacts() confirms it before we ever send.
+        const status = result.status === 'verified' ? 'verified' : 'guessed';
+        q.updateContactEmail(c.id, result.email, status);
         found += 1;
       } else {
         q.updateContactEmail(c.id, null, 'email_not_found');
@@ -442,6 +445,19 @@ export async function findEmailsForContacts(limit = 25) {
   }
   logger.info('findEmailsForContacts complete', { found, missed, considered: contacts.length });
   return { found, missed };
+}
+
+/** Convenience: find emails for contacts, then run Snov verification on the fresh guesses. */
+export async function findAndVerifyContacts(limit = 25) {
+  const finderResult = await findEmailsForContacts(limit);
+  let verify = { verified: 0, rejected: 0, submitted: 0 };
+  try {
+    const { verifyGuessedContacts } = await import('./verifier.js');
+    verify = await verifyGuessedContacts();
+  } catch (err) {
+    logger.debug('findAndVerifyContacts: verifier unavailable', { error: err.message });
+  }
+  return { ...finderResult, ...verify };
 }
 
 export default findEmail;
