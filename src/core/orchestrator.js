@@ -16,6 +16,11 @@ import scrapeUpwork from '../scrapers/upwork.js';
 import { scoreUnscoredJobs } from '../intelligence/scorer.js';
 import applyToJobs from '../scrapers/apply.js';
 import runCrawler from '../crawler/index.js';
+import { findEmailsForLeads, findEmailsForContacts } from '../email/hunter.js';
+import { verifyGuessedContacts } from '../email/verifier.js';
+import findTargetCompanies from '../leads/company-hunter.js';
+import enrichDiscoveredLeads from '../leads/enricher.js';
+import sendOutreachEmails, { sendContactOutreach, processSendRequests } from '../leads/outreach.js';
 
 /**
  * Run a named step. Never throws — returns { name, ok, result?, error? } so the cycle can
@@ -62,15 +67,29 @@ export async function runCycle() {
   // ── Score ──
   steps.push(await runStep('scoreUnscoredJobs', () => scoreUnscoredJobs(50)));
 
+  // ── Email finding + verification ──
+  steps.push(await runStep('findEmailsForLeads', () => findEmailsForLeads(25)));
+  steps.push(await runStep('findEmailsForContacts', () => findEmailsForContacts(25)));
+  steps.push(await runStep('verifyGuessedContacts', verifyGuessedContacts));
+
   // ── Apply ──
   steps.push(await runStep('applyToJobs', applyToJobs));
 
+  // ── Developer outreach track ──
+  steps.push(await runStep('findTargetCompanies', () => findTargetCompanies(30)));
+  steps.push(await runStep('enrichDiscoveredLeads', () => enrichDiscoveredLeads(20)));
+  steps.push(await runStep('sendOutreachEmails', () => sendOutreachEmails()));
+  steps.push(await runStep('sendContactOutreach', () => sendContactOutreach()));
+  steps.push(await runStep('processSendRequests', () => processSendRequests()));
+
   const counts = {
     jobs_found: sumField(steps, JOB_FEEDS, 'inserted'),
-    leads_found: sumField(steps, ['scrapeWellfound'], 'inserted'),
+    leads_found: sumField(steps, ['scrapeWellfound', 'findTargetCompanies'], 'inserted'),
     jobs_scored: sumField(steps, ['scoreUnscoredJobs'], 'scored'),
-    emails_found: 0,
-    proposals_sent: sumField(steps, ['applyToJobs'], 'applied'),
+    emails_found: sumField(steps, ['findEmailsForLeads', 'findEmailsForContacts'], 'found'),
+    proposals_sent:
+      sumField(steps, ['applyToJobs'], 'applied') +
+      sumField(steps, ['sendOutreachEmails', 'sendContactOutreach', 'processSendRequests'], 'sent'),
   };
   const errors = steps.filter((s) => !s.ok).map((s) => `${s.name}: ${s.error}`);
 
