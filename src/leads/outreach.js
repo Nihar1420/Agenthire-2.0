@@ -10,6 +10,7 @@ import { sendEmail } from '../email/sender.js';
 import {
   getLeadsReadyForOutreach,
   getTodayApplicationCountByType,
+  getTodayDevOutreachCount,
   insertApplication,
   updateLeadStatus,
   getContactsReadyForOutreach,
@@ -22,9 +23,9 @@ import {
 const TYPE = 'cold_email';
 const SOURCE = 'company_hunt';
 
-/** Count today's dev-track cold emails (overridden by the source-split counter in a later commit). */
+/** Count today's dev-track cold emails (source-split, excludes SMB). */
 function devSentToday() {
-  return getTodayApplicationCountByType(TYPE);
+  return getTodayDevOutreachCount();
 }
 
 export async function sendOutreachEmails(cap = config.devOutreachDailyCap) {

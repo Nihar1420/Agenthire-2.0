@@ -248,6 +248,33 @@ export function getTodayTotalSendCount() {
   return row ? row.n : 0;
 }
 
+/**
+ * Today's dev-track cold emails (leads sourced from company_hunt / wellfound).
+ * Applications not linked to a lead count as dev (contacts/one-offs default here).
+ */
+export function getTodayDevOutreachCount() {
+  const row = stmt(`
+    SELECT COUNT(*) AS n FROM applications a
+    LEFT JOIN leads l ON l.id = a.lead_id
+    WHERE a.type = 'cold_email'
+      AND date(a.sent_at) = date('now', 'localtime')
+      AND (l.source IS NULL OR l.source != 'smb_hunt')
+  `).get();
+  return row ? row.n : 0;
+}
+
+/** Today's SMB-track cold emails (leads sourced from smb_hunt). */
+export function getTodaySMBOutreachCount() {
+  const row = stmt(`
+    SELECT COUNT(*) AS n FROM applications a
+    JOIN leads l ON l.id = a.lead_id
+    WHERE a.type = 'cold_email'
+      AND date(a.sent_at) = date('now', 'localtime')
+      AND l.source = 'smb_hunt'
+  `).get();
+  return row ? row.n : 0;
+}
+
 /** Count applications of a given type sent today (local date), for daily-cap checks. */
 export function getTodayApplicationCountByType(type) {
   const row = stmt(`
