@@ -144,6 +144,20 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_contacts_email_status ON contacts(email_status);
     CREATE INDEX IF NOT EXISTS idx_contacts_send_req     ON contacts(send_requested);
     CREATE INDEX IF NOT EXISTS idx_contacts_track        ON contacts(track);
+
+    CREATE TABLE IF NOT EXISTS business_ideas (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      type             TEXT,
+      geography        TEXT,
+      digital_gap      TEXT,
+      service_pitch    TEXT,
+      estimated_value  INTEGER,
+      keywords         TEXT,
+      status           TEXT NOT NULL DEFAULT 'active',
+      created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_business_ideas_status ON business_ideas(status);
   `);
 
   // ── Idempotent column additions (hirer queue) ──

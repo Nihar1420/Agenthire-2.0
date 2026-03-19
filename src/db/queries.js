@@ -509,6 +509,34 @@ export function getContactsReadyForOutreach(limit = 50) {
 }
 
 // ─────────────────────────────────────────────────────────
+// BUSINESS IDEAS (SMB track seeds)
+// ─────────────────────────────────────────────────────────
+
+export function insertBusinessIdea(idea) {
+  const info = stmt(`
+    INSERT INTO business_ideas (type, geography, digital_gap, service_pitch, estimated_value, keywords, status)
+    VALUES (@type, @geography, @digital_gap, @service_pitch, @estimated_value, @keywords, @status)
+  `).run({
+    type: idea.type ?? null,
+    geography: idea.geography ?? null,
+    digital_gap: idea.digital_gap ?? null,
+    service_pitch: idea.service_pitch ?? null,
+    estimated_value: idea.estimated_value ?? null,
+    keywords: idea.keywords ?? null,
+    status: idea.status ?? 'active',
+  });
+  return { id: Number(info.lastInsertRowid) };
+}
+
+export function getActiveBusinessIdeas(limit = 10) {
+  return stmt(`SELECT * FROM business_ideas WHERE status = 'active' ORDER BY created_at DESC LIMIT ?`).all(limit);
+}
+
+export function updateBusinessIdeaStatus(id, status) {
+  return stmt(`UPDATE business_ideas SET status = ? WHERE id = ?`).run(status, id);
+}
+
+// ─────────────────────────────────────────────────────────
 // ANALYTICS
 // ─────────────────────────────────────────────────────────
 
