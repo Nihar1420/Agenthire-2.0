@@ -167,6 +167,12 @@ export function getLeadsWithoutEmail(limit = 50) {
   `).all(limit);
 }
 
+export function getLeadsBySourceStatus(source, status, limit = 50) {
+  return stmt(`
+    SELECT * FROM leads WHERE source = ? AND status = ? ORDER BY created_at ASC LIMIT ?
+  `).all(source, status, limit);
+}
+
 export function getLeadsReadyForOutreach(source, limit = 50) {
   return stmt(`
     SELECT * FROM leads
