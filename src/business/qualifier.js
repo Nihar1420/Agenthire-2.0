@@ -8,10 +8,19 @@ import logger from '../utils/logger.js';
 import { complete } from '../intelligence/llm.js';
 import { stripCodeFences } from '../intelligence/scorer.js';
 import { findBusinessEmail } from './business-email.js';
+import { findEmail } from '../email/hunter.js';
+import { hasMxRecord } from '../email/sender.js';
 import { getLeadsBySourceStatus, updateLeadEnrichment, updateLeadStatus } from '../db/queries.js';
 
 const SOURCE = 'smb_hunt';
 const OWNER_TITLES = ['Owner', 'General Manager', 'GM', 'Director', 'Managing Director', 'Principal'];
+const SMB_FALLBACK_MIN_SCORE = 65; // only spend paid finder credits on strong-enough SMB leads
+
+/** Drop undeliverable addresses (no MX). Returns the email if it looks deliverable, else null. */
+async function verifyEmailState(email) {
+  if (!email) return null;
+  return (await hasMxRecord(email)) ? email : null;
+}
 
 function parseNotes(lead) {
   try {
@@ -92,20 +101,41 @@ export async function qualifySMBLeads(limit = 20) {
 
     const owner = await apolloOwner(lead);
     let email = owner?.email || null;
+
+    // Primary: generic business inbox.
     if (!email) {
       const biz = await findBusinessEmail({ website: lead.company_url });
       if (biz) email = biz.email;
     }
 
-    updateLeadEnrichment(lead.id, {
-      score,
-      name: owner?.name || null,
-      title: owner?.title || null,
-      email,
-      email_status: email ? 'guessed' : null,
-      status: 'qualifying', // part 2 finalizes ready_for_outreach / no_email
-    });
-    qualified += 1;
+    // Gated fallback: the 6-method chain, only for strong SMB leads (≥65).
+    if (!email && score >= SMB_FALLBACK_MIN_SCORE) {
+      const result = await findEmail({ ...lead, name: owner?.name || lead.name });
+      if (result?.email) email = result.email;
+    }
+
+    // Drop undeliverable addresses before we ever queue them.
+    email = await verifyEmailState(email);
+
+    if (email) {
+      updateLeadEnrichment(lead.id, {
+        score,
+        name: owner?.name || null,
+        title: owner?.title || null,
+        email,
+        email_status: 'guessed',
+        status: 'ready_for_outreach',
+        ready_for_outreach: 1,
+      });
+      qualified += 1;
+    } else {
+      updateLeadEnrichment(lead.id, {
+        score,
+        name: owner?.name || null,
+        title: owner?.title || null,
+        status: 'no_email',
+      });
+    }
   }
 
   logger.info('qualifySMBLeads (part 1) complete', { qualified, considered: leads.length });
