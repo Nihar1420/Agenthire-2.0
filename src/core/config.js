@@ -80,6 +80,9 @@ export const config = {
   apolloApiKey: env.APOLLO_API_KEY,
   googlePlacesApiKey: env.GOOGLE_PLACES_API_KEY,
   apifyApiToken: env.APIFY_API_TOKEN,
+  // Apify actor IDs (env-overridable). Profiles use HarvestAPI's LinkedIn profile-search actor.
+  apifyProfileActor: env.APIFY_PROFILE_ACTOR || 'harvestapi~linkedin-profile-search',
+  apifyPostsActor: env.APIFY_POSTS_ACTOR || 'harvestapi~linkedin-post-search',
 
   // ─── Platform sessions ─────────────────────────────────
   upworkSessionToken: env.UPWORK_SESSION_TOKEN,
