@@ -67,5 +67,55 @@ export async function searchLinkedInProfiles({ titles = [], locations = [] } = {
   }
 }
 
-export { ALLOWED_COUNTRIES };
+// Title priority for hiring contacts (higher index = better). Off-list titles are rejected.
+const CONTACT_TITLE_PRIORITY = [
+  'talent',
+  'recruiter',
+  'recruiting',
+  'people',
+  'hr',
+  'hiring manager',
+  'engineering manager',
+  'head of engineering',
+  'vp engineering',
+  'cto',
+  'founder',
+  'co-founder',
+  'ceo',
+];
+
+/** Rank a title by CONTACT_TITLE_PRIORITY. Returns -1 for off-list titles (rejected). */
+export function titleRank(title) {
+  const t = (title || '').toLowerCase();
+  let best = -1;
+  CONTACT_TITLE_PRIORITY.forEach((kw, i) => {
+    if (t.includes(kw) && i > best) best = i;
+  });
+  return best;
+}
+
+/**
+ * Find the single best hiring contact at a company via LinkedIn profile search.
+ * Rejects anyone whose title isn't on CONTACT_TITLE_PRIORITY (title-rank floor of 0).
+ * @returns {Promise<object|null>} the best contact (with jobId attached) or null
+ */
+export async function findContactForCompany(jobId, company) {
+  if (!company) return null;
+  const profiles = await searchLinkedInProfiles({
+    titles: CONTACT_TITLE_PRIORITY.slice(-6), // senior/decision-maker titles
+    locations: [],
+  });
+
+  const ranked = profiles
+    .filter((p) => (p.company || '').toLowerCase().includes(company.toLowerCase()))
+    .map((p) => ({ ...p, rank: titleRank(p.title) }))
+    .filter((p) => p.rank >= 0) // reject off-list titles
+    .sort((a, b) => b.rank - a.rank);
+
+  const best = ranked[0] || null;
+  if (best) logger.info('findContactForCompany: found', { company, name: best.name, title: best.title });
+  return best ? { ...best, jobId } : null;
+}
+
+export { ALLOWED_COUNTRIES, CONTACT_TITLE_PRIORITY };
 export default searchLinkedInProfiles;
