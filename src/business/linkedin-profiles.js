@@ -5,6 +5,7 @@
 
 import config from '../core/config.js';
 import logger from '../utils/logger.js';
+import { insertLead, insertContact, contactExistsByLinkedIn } from '../db/queries.js';
 
 const ALLOWED_COUNTRIES = (process.env.ALLOWED_COUNTRIES || 'United States,Canada,United Kingdom,Australia')
   .split(',')
@@ -115,6 +116,51 @@ export async function findContactForCompany(jobId, company) {
   const best = ranked[0] || null;
   if (best) logger.info('findContactForCompany: found', { company, name: best.name, title: best.title });
   return best ? { ...best, jobId } : null;
+}
+
+/** Recruiter-side titles imply a job lead; everyone else is treated as a potential client. */
+function trackFor(title) {
+  const t = (title || '').toLowerCase();
+  return /recruit|talent|\bhr\b|people|hiring/.test(t) ? 'recruiter_job' : 'founder_client';
+}
+
+/**
+ * Insert discovered profiles as one company-lead + one person-contact each, deduped on
+ * linkedin_url. Returns { inserted } (number of new contacts).
+ */
+export function insertProfiles(profiles = []) {
+  let inserted = 0;
+  for (const p of profiles) {
+    if (!p.linkedin_url || contactExistsByLinkedIn(p.linkedin_url)) continue;
+    const track = trackFor(p.title);
+
+    const lead = insertLead({
+      source: 'linkedin',
+      company: p.company,
+      name: p.name,
+      title: p.title,
+      linkedin_url: p.linkedin_url,
+      email: p.email,
+      email_status: p.email ? 'verified' : null,
+      score: 65,
+      status: p.email ? 'ready_for_outreach' : 'new',
+    });
+
+    insertContact({
+      source_type: 'linkedin',
+      source_id: lead.id,
+      name: p.name,
+      company: p.company,
+      linkedin_url: p.linkedin_url,
+      email: p.email,
+      email_status: p.email ? 'verified' : null,
+      status: 'new',
+      track,
+    });
+    inserted += 1;
+  }
+  logger.info('insertProfiles complete', { inserted, considered: profiles.length });
+  return { inserted };
 }
 
 export { ALLOWED_COUNTRIES, CONTACT_TITLE_PRIORITY };
