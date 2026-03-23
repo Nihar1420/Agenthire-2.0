@@ -21,6 +21,10 @@ import { verifyGuessedContacts } from '../email/verifier.js';
 import findTargetCompanies from '../leads/company-hunter.js';
 import enrichDiscoveredLeads from '../leads/enricher.js';
 import sendOutreachEmails, { sendContactOutreach, processSendRequests } from '../leads/outreach.js';
+import findSMBLeads from '../business/company-finder.js';
+import qualifySMBLeads from '../business/qualifier.js';
+import sendSMBOutreach from '../business/smb-outreach.js';
+import emailApplyToJobs from '../scrapers/email-apply.js';
 
 /**
  * Run a named step. Never throws — returns { name, ok, result?, error? } so the cycle can
@@ -82,14 +86,30 @@ export async function runCycle() {
   steps.push(await runStep('sendContactOutreach', () => sendContactOutreach()));
   steps.push(await runStep('processSendRequests', () => processSendRequests()));
 
+  // ── SMB track ──
+  steps.push(await runStep('findSMBLeads', () => findSMBLeads(30)));
+  steps.push(await runStep('qualifySMBLeads', () => qualifySMBLeads(20)));
+  steps.push(await runStep('sendSMBOutreach', () => sendSMBOutreach()));
+
+  // ── LinkedIn discovery runs here (once/day) — wired in a later commit. ──
+
+  // ── Direct email-apply track ──
+  steps.push(await runStep('emailApplyToJobs', emailApplyToJobs));
+
+  // ── runSequence (3-touch follow-ups) is implemented but intentionally DISABLED here. ──
+
   const counts = {
     jobs_found: sumField(steps, JOB_FEEDS, 'inserted'),
-    leads_found: sumField(steps, ['scrapeWellfound', 'findTargetCompanies'], 'inserted'),
+    leads_found: sumField(steps, ['scrapeWellfound', 'findTargetCompanies', 'findSMBLeads'], 'inserted'),
     jobs_scored: sumField(steps, ['scoreUnscoredJobs'], 'scored'),
     emails_found: sumField(steps, ['findEmailsForLeads', 'findEmailsForContacts'], 'found'),
     proposals_sent:
       sumField(steps, ['applyToJobs'], 'applied') +
-      sumField(steps, ['sendOutreachEmails', 'sendContactOutreach', 'processSendRequests'], 'sent'),
+      sumField(
+        steps,
+        ['sendOutreachEmails', 'sendContactOutreach', 'processSendRequests', 'sendSMBOutreach', 'emailApplyToJobs'],
+        'sent'
+      ),
   };
   const errors = steps.filter((s) => !s.ok).map((s) => `${s.name}: ${s.error}`);
 
