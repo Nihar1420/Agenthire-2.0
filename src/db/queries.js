@@ -511,6 +511,49 @@ export function setContactSendRequested(id, flag = 1) {
   );
 }
 
+/**
+ * Save a hirer-queue contact discovered for a job, in 'pending_review' status (awaits a
+ * manual dashboard action before anything is sent). Deduped by (job, linkedin_url).
+ */
+export function saveHirerQueueContact(jobId, contact) {
+  if (contact.linkedin_url) {
+    const existing = stmt(
+      `SELECT id FROM contacts WHERE source_type = 'job' AND source_id = ? AND linkedin_url = ? LIMIT 1`
+    ).get(jobId, contact.linkedin_url);
+    if (existing) return { id: existing.id, inserted: false };
+  }
+  const info = stmt(`
+    INSERT INTO contacts (source_type, source_id, name, company, linkedin_url, email, email_status, status, track)
+    VALUES ('job', @source_id, @name, @company, @linkedin_url, @email, @email_status, 'pending_review', @track)
+  `).run({
+    source_id: jobId,
+    name: contact.name ?? null,
+    company: contact.company ?? null,
+    linkedin_url: contact.linkedin_url ?? null,
+    email: contact.email ?? null,
+    email_status: contact.email ? 'verified' : null,
+    track: contact.track ?? 'recruiter_job',
+  });
+  return { id: Number(info.lastInsertRowid), inserted: true };
+}
+
+/** Alias kept for the dashboard's naming. */
+export function insertJobPendingReviewContact(jobId, contact) {
+  return saveHirerQueueContact(jobId, contact);
+}
+
+/** Contacts awaiting manual review for a job (the hirer queue). */
+export function getPendingReviewContacts(limit = 100) {
+  return stmt(`SELECT * FROM contacts WHERE status = 'pending_review' ORDER BY created_at DESC LIMIT ?`).all(limit);
+}
+
+/** Move a reviewed contact from pending_review → outreach_sent. */
+export function markContactOutreachSent(id) {
+  return stmt(
+    `UPDATE contacts SET status = 'outreach_sent', updated_at = datetime('now') WHERE id = ? AND status = 'pending_review'`
+  ).run(id);
+}
+
 /** Contacts with a usable email, ready for outreach on a given track. */
 export function getContactsReadyForOutreach(limit = 50) {
   return stmt(`
