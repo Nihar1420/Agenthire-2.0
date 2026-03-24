@@ -167,6 +167,15 @@ export function getLeadsWithoutEmail(limit = 50) {
   `).all(limit);
 }
 
+/** Count LinkedIn-sourced leads created today (gates once-daily discovery). */
+export function getTodayLinkedInLeadCount() {
+  const row = stmt(`
+    SELECT COUNT(*) AS n FROM leads
+    WHERE source = 'linkedin' AND date(created_at) = date('now', 'localtime')
+  `).get();
+  return row ? row.n : 0;
+}
+
 export function getLeadsBySourceStatus(source, status, limit = 50) {
   return stmt(`
     SELECT * FROM leads WHERE source = ? AND status = ? ORDER BY created_at ASC LIMIT ?

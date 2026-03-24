@@ -4,8 +4,10 @@
 // cycle logging, the scheduler, and later tracks are layered on in subsequent commits.
 
 import cron from 'node-cron';
+import config from '../core/config.js';
 import logger from '../utils/logger.js';
-import { insertCycleLog, updateCycleLog } from '../db/queries.js';
+import { insertCycleLog, updateCycleLog, getTodayLinkedInLeadCount } from '../db/queries.js';
+import { searchLinkedInProfiles, insertProfiles } from '../business/linkedin-profiles.js';
 
 import scrapeWWR from '../scrapers/wwr.js';
 import scrapeRemotive from '../scrapers/remotive.js';
@@ -51,6 +53,22 @@ function sumField(steps, names, field) {
 
 const JOB_FEEDS = ['scrapeWWR', 'scrapeRemotive', 'scrapeRemoteOK', 'scrapeHackerNews', 'scrapeUpwork', 'crawlSources'];
 
+// Curated targeting for the once-daily LinkedIn discovery run.
+const LINKEDIN_TITLES = ['Technical Recruiter', 'Talent Acquisition', 'Head of Engineering', 'CTO', 'Founder'];
+const LINKEDIN_LOCATIONS = ['United States', 'Canada', 'United Kingdom', 'Australia'];
+
+/**
+ * Run LinkedIn profile discovery at most once per calendar day, and only when enabled.
+ * Returns { inserted } (0 when skipped).
+ */
+async function linkedInDiscovery() {
+  if (!config.linkedinProfileSearchEnabled) return { inserted: 0, skipped: 'disabled' };
+  if (getTodayLinkedInLeadCount() > 0) return { inserted: 0, skipped: 'already-ran-today' };
+
+  const profiles = await searchLinkedInProfiles({ titles: LINKEDIN_TITLES, locations: LINKEDIN_LOCATIONS });
+  return insertProfiles(profiles);
+}
+
 /** Run one full cycle. Opens a cycle_logs row, runs the pipeline, and records counts + errors. */
 export async function runCycle() {
   logger.info('cycle starting');
@@ -91,7 +109,8 @@ export async function runCycle() {
   steps.push(await runStep('qualifySMBLeads', () => qualifySMBLeads(20)));
   steps.push(await runStep('sendSMBOutreach', () => sendSMBOutreach()));
 
-  // ── LinkedIn discovery runs here (once/day) — wired in a later commit. ──
+  // ── LinkedIn discovery (once/day, gated) ──
+  steps.push(await runStep('linkedInDiscovery', linkedInDiscovery));
 
   // ── Direct email-apply track ──
   steps.push(await runStep('emailApplyToJobs', emailApplyToJobs));
