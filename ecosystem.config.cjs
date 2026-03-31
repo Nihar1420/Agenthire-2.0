@@ -30,5 +30,17 @@ module.exports = {
       max_memory_restart: '200M',
       time: true,
     },
+    {
+      // Read-only monitoring dashboard (Next.js) on PORT 3000.
+      name: 'dashboard',
+      cwd: './ui',
+      script: 'node_modules/next/dist/bin/next',
+      args: 'start -p 3000',
+      autorestart: true,
+      restart_delay: 5000,
+      max_memory_restart: '400M',
+      env: { PORT: '3000' },
+      time: true,
+    },
   ],
 };
