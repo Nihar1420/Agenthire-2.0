@@ -11,14 +11,20 @@ import { relativeTime, formatDate } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
-/** Derive agent health from the most recent cycle_logs row. */
+/**
+ * Derive agent health from the most recent cycle_logs row.
+ * The orchestrator is a CRON process that PM2 stops between cycles — that stopped state is
+ * normal and must never be reported as "Paused / PM2 not detected". We judge health purely
+ * from the last cycle's recency + status, so a healthy idle agent reads as healthy.
+ */
 function agentStatus(cycle) {
   if (!cycle) return { label: 'No cycles yet', tone: 'text-muted' };
   const started = cycle.started_at ? Date.parse(`${cycle.started_at.replace(' ', 'T')}Z`) : 0;
   const ageH = started ? (Date.now() - started) / 3600000 : 999;
+  // A cycle stuck in 'running' for over an hour is a genuine stall.
   if (cycle.status === 'running' && ageH > 1) return { label: 'Stalled', tone: 'text-bad' };
   if (cycle.status === 'running') return { label: 'Running', tone: 'text-good' };
-  // Cron runs every 2h; a gap under ~2.5h between cycles is normal "idle".
+  // Cron fires every 2h; anything under ~3h since the last cycle is a healthy idle gap.
   if (ageH > 3) return { label: 'Idle (overdue)', tone: 'text-warn' };
   return { label: 'Idle (healthy)', tone: 'text-good' };
 }

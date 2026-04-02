@@ -10,7 +10,7 @@
     "timezone": "Asia/Kolkata",
     "startingWithin": "immediately"
   },
-  "targetPlatforms": ["upwork", "wellfound", "remotive", "remoteok", "wwr", "hackernews"],
+  "targetPlatforms": ["upwork", "wellfound", "remotive", "remoteok", "wwr", "hackernews", "linkedin"],
   "preferredStacks": [
     "Node.js",
     "React",

@@ -10,7 +10,7 @@ import { stripCodeFences } from '../intelligence/scorer.js';
 import { findBusinessEmail } from './business-email.js';
 import { findEmail } from '../email/hunter.js';
 import { hasMxRecord } from '../email/sender.js';
-import { getLeadsBySourceStatus, updateLeadEnrichment, updateLeadStatus } from '../db/queries.js';
+import { getLeadsBySourceStatus, updateLeadEnrichment } from '../db/queries.js';
 
 const SOURCE = 'smb_hunt';
 const OWNER_TITLES = ['Owner', 'General Manager', 'GM', 'Director', 'Managing Director', 'Principal'];
